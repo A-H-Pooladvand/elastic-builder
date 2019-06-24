@@ -148,6 +148,25 @@ class Collection implements JsonSerializable, Countable
     }
 
     /**
+     * Get aggregation bucket.
+     *
+     * @param string|null $index
+     * @return array
+     */
+    public function aggregations(string $index = null): array
+    {
+        if ($index) {
+            $this->items = $this->items['aggregations'][$index]['buckets'];
+
+            return $this->getItems();
+        }
+
+        $this->items = $this->items['aggregations'];
+
+        return $this->getItems();
+    }
+
+    /**
      * Returns final results.
      *
      * @return array

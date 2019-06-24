@@ -29,9 +29,8 @@ class TelegramController extends Controller
             ->sizeLess()
             ->term('to_id.channel_id', 1062906179)
             ->range('date', '2019-06-10', '2019-06-24', ['format' => 'yyyy-MM-dd'])
-            ->term('to_id.channel_id', 1062906179)
             ->dateHistogram('monthly_views', 'date', 'day', null, static function (DateHistogramAggregation $dateHistogram, Aggregation $aggregation) {
                 return $dateHistogram->addAggregation($aggregation->avg('avg_views', 'views'));
-            })->get(TelegramChannelMessage::class, true);
+            })->get(TelegramChannelMessage::class)->aggregations('monthly_views');
     }
 }
