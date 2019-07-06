@@ -2,11 +2,10 @@
 
 namespace App\Http\Controllers\Telegram;
 
-use App\Library\Elasticsearch\Aggregation;
 use App\TelegramChannelMessage;
 use App\Http\Controllers\Controller;
+use App\Library\Elasticsearch\Aggregation;
 use App\Library\Elasticsearch\Elasticsearch;
-use Carbon\Traits\Date;
 use ONGR\ElasticsearchDSL\Aggregation\Bucketing\DateHistogramAggregation;
 
 class TelegramController extends Controller
@@ -26,7 +25,7 @@ class TelegramController extends Controller
     public function index()
     {
         return $this->search
-            ->sizeLess()
+            //->sizeLess()
             ->term('to_id.channel_id', 1062906179)
             ->range('date', '2019-06-10', '2019-06-24', ['format' => 'yyyy-MM-dd'])
             ->dateHistogram('monthly_views', 'date', 'day', null, static function (DateHistogramAggregation $dateHistogram, Aggregation $aggregation) {

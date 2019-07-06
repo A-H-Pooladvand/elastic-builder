@@ -22,27 +22,29 @@ class Collection implements JsonSerializable, Countable
     /**
      * Get first level of hits.
      *
-     * @return array
+     * @return self
      */
-    public function hits(): array
+    public function hits(): self
     {
         $this->items = $this->items['hits'];
 
-        return $this->getItems();
+        return $this;
     }
 
     /**
      * Get second level of hits (_source).
      *
-     * @return array
+     * @return self
      */
-    public function source(): array
+    public function source(): self
     {
+        $this->hits();
+
         $this->items = array_map(static function ($item) {
             return $item['_source'];
-        }, $this->hits()['hits']);
+        }, $this->items['hits']);
 
-        return $this->getItems();
+        return $this;
     }
 
     /**
@@ -57,32 +59,24 @@ class Collection implements JsonSerializable, Countable
     }
 
     /**
-     * Convert the collection to its string representation.
-     *
-     * @return string
-     */
-    public function __toString(): string
-    {
-        return $this->toJson();
-    }
-
-    /**
      * Get the values of a given key.
      *
      * @param string $column
-     * @return array
+     * @return self
      */
-    public function pluck(string $column): array
+    public function pluck(string $column): self
     {
         $columns = explode('.', $column);
 
-        $this->source();
-
-        foreach ($columns as $item) {
-            $this->items = $this->plucker($this->getItems(), $item);
+        if (! empty($this->items['_shards'])) {
+            $this->source();
         }
 
-        return $this->items;
+        foreach ($columns as $item) {
+            $this->items = $this->plucker($this->items, $item);
+        }
+
+        return $this;
     }
 
     /**
@@ -119,7 +113,7 @@ class Collection implements JsonSerializable, Countable
      */
     public function jsonSerialize()
     {
-        return $this->getItems();
+        return $this->items;
     }
 
     /**
@@ -151,19 +145,19 @@ class Collection implements JsonSerializable, Countable
      * Get aggregation bucket.
      *
      * @param string|null $index
-     * @return array
+     * @return self
      */
-    public function aggregations(string $index = null): array
+    public function aggregations(string $index = null): self
     {
         if ($index) {
             $this->items = $this->items['aggregations'][$index]['buckets'];
 
-            return $this->getItems();
+            return $this;
         }
 
         $this->items = $this->items['aggregations'];
 
-        return $this->getItems();
+        return $this;
     }
 
     /**
@@ -171,8 +165,18 @@ class Collection implements JsonSerializable, Countable
      *
      * @return array
      */
-    private function getItems(): array
+    public function toArray(): array
     {
         return $this->items;
+    }
+
+    /**
+     * Convert the collection to its string representation.
+     *
+     * @return string
+     */
+    public function __toString(): string
+    {
+        return $this->toJson();
     }
 }
