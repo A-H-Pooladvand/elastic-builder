@@ -3,9 +3,13 @@
 namespace App\Library\Elasticsearch;
 
 use Countable;
+use ArrayAccess;
+use Traversable;
+use ArrayIterator;
 use JsonSerializable;
+use IteratorAggregate;
 
-class Collection implements JsonSerializable, Countable
+class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAggregate
 {
     /**
      * array of data.
@@ -28,7 +32,7 @@ class Collection implements JsonSerializable, Countable
     {
         $this->items = $this->items['hits'];
 
-        return $this;
+        return new static($this->items);
     }
 
     /**
@@ -44,13 +48,13 @@ class Collection implements JsonSerializable, Countable
             return $item['_source'];
         }, $this->items['hits']);
 
-        return $this;
+        return new static($this->items);
     }
 
     /**
      * Get collection of items as json.
      *
-     * @param int $options
+     * @param  int  $options
      * @return string
      */
     public function toJson(int $options = JSON_ERROR_NONE): string
@@ -61,7 +65,7 @@ class Collection implements JsonSerializable, Countable
     /**
      * Get the values of a given key.
      *
-     * @param string $column
+     * @param  string  $column
      * @return self
      */
     public function pluck(string $column): self
@@ -76,14 +80,14 @@ class Collection implements JsonSerializable, Countable
             $this->items = $this->plucker($this->items, $item);
         }
 
-        return $this;
+        return new static($this->items);
     }
 
     /**
      * Plucks given items based on provided column.
      *
-     * @param array $items
-     * @param string $column
+     * @param  array  $items
+     * @param  string  $column
      * @return array
      */
     private function plucker(array $items, string $column): array
@@ -144,20 +148,45 @@ class Collection implements JsonSerializable, Countable
     /**
      * Get aggregation bucket.
      *
-     * @param string|null $index
-     * @return self
+     * @param  mixed  ...$index
+     * @return \App\Library\Elasticsearch\Collection
      */
-    public function aggregations(string $index = null): self
+    public function aggregations(...$index): self
     {
-        if ($index) {
-            $this->items = $this->items['aggregations'][$index]['buckets'];
+        if (empty($index)) {
+            $this->items = $this->items['aggregations'];
 
-            return $this;
+            return new static($this->items);
         }
 
-        $this->items = $this->items['aggregations'];
+        $items = [];
+        array_map(function (string $index) use (&$items) {
+            $items[$index] = array_map(static function ($item) {
+                return [
+                    'title' => $item['key'],
+                    'count' => $item['doc_count'],
+                ];
+            }, $this->items['aggregations'][$index]['buckets']);
+        }, $index);
 
-        return $this;
+        $this->items = count($index) > 1 ? $items : reset($items);
+
+        return new static($this->items);
+    }
+
+    /**
+     * Run a map over each of the items.
+     *
+     * @param  callable  $callback
+     * @return self
+     */
+    public function map(callable $callback): self
+    {
+        $this->items = array_map(static function ($item) use ($callback) {
+            return $callback($item);
+        }, $this->items);
+
+        return new static($this->items);
     }
 
     /**
@@ -171,6 +200,80 @@ class Collection implements JsonSerializable, Countable
     }
 
     /**
+     * Determine if an item exists at an offset.
+     *
+     * @param  mixed  $key
+     * @return bool
+     */
+    public function offsetExists($key): bool
+    {
+        return array_key_exists($key, $this->items);
+    }
+
+    /**
+     * Remove an item from the collection by key.
+     *
+     * @param  string|array  $keys
+     * @return self
+     */
+    public function forget($keys): self
+    {
+        foreach ((array) $keys as $key) {
+            $this->offsetUnset($key);
+        }
+
+        return new static($this->items);
+    }
+
+    /**
+     * Reset the keys on the underlying array.
+     *
+     * @return self
+     */
+    public function values(): self
+    {
+        return new static(array_values($this->items));
+    }
+
+    /**
+     * Get an item at a given offset.
+     *
+     * @param  mixed  $key
+     * @return mixed
+     */
+    public function offsetGet($key)
+    {
+        return $this->items[$key];
+    }
+
+    /**
+     * Set the item at a given offset.
+     *
+     * @param  mixed  $key
+     * @param  mixed  $value
+     * @return void
+     */
+    public function offsetSet($key, $value): void
+    {
+        if (null === $key) {
+            $this->items[] = $value;
+        } else {
+            $this->items[$key] = $value;
+        }
+    }
+
+    /**
+     * Unset the item at a given offset.
+     *
+     * @param  string  $key
+     * @return void
+     */
+    public function offsetUnset($key): void
+    {
+        unset($this->items[$key]);
+    }
+
+    /**
      * Convert the collection to its string representation.
      *
      * @return string
@@ -178,5 +281,36 @@ class Collection implements JsonSerializable, Countable
     public function __toString(): string
     {
         return $this->toJson();
+    }
+
+    public function __set($name, $value)
+    {
+        // Todo implement method.
+        dd('Please implement the magic method.');
+    }
+
+    public function __isset($name)
+    {
+        // Todo implement method.
+        dd('Please implement the magic method.');
+    }
+
+    public function __get($name)
+    {
+        if (is_array($this->items[$name])) {
+            return $this->items[$name];
+        }
+
+        return $this->items[$name];
+    }
+
+    /**
+     * Get an iterator for the items.
+     *
+     * @return \ArrayIterator
+     */
+    public function getIterator(): ArrayIterator
+    {
+        return new ArrayIterator($this->items);
     }
 }

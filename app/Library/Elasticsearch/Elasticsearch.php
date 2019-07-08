@@ -34,8 +34,8 @@ class Elasticsearch
     /**
      * Get query results.
      *
-     * @param string $model
-     * @param bool $debug
+     * @param  string  $model
+     * @param  bool  $debug
      * @return \App\Library\Elasticsearch\Collection
      */
     public function get($model, bool $debug = null)
@@ -56,7 +56,7 @@ class Elasticsearch
             return $search->toArray();
         }
 
-        $searchResult = $this->search($search, (new $model)->getIndex());
+        $searchResult = $this->search($search, 'divar_post');
 
         $this->resetProperties();
 
@@ -66,7 +66,7 @@ class Elasticsearch
     /**
      * Selects required fields.
      *
-     * @param string|array $fields
+     * @param  string|array  $fields
      * @return \App\Library\Elasticsearch\Elasticsearch
      */
     public function source($fields): self
@@ -91,7 +91,7 @@ class Elasticsearch
     /**
      * Sets size of query results.
      *
-     * @param int $size
+     * @param  int  $size
      * @return self
      */
     public function size(int $size): self
@@ -126,7 +126,7 @@ class Elasticsearch
     /**
      * Add queries property container to search query.
      *
-     * @param \ONGR\ElasticsearchDSL\Search $search
+     * @param  \ONGR\ElasticsearchDSL\Search  $search
      * @return \ONGR\ElasticsearchDSL\Search
      */
     private function addQueries(Search $search): Search
@@ -141,8 +141,8 @@ class Elasticsearch
     /**
      * Search query in the given index.
      *
-     * @param \ONGR\ElasticsearchDSL\Search $search
-     * @param string $index
+     * @param  \ONGR\ElasticsearchDSL\Search  $search
+     * @param  string  $index
      * @return array
      */
     private function search(Search $search, string $index): array
@@ -160,7 +160,7 @@ class Elasticsearch
     /**
      * Add aggregations property container to search aggregation.
      *
-     * @param \ONGR\ElasticsearchDSL\Search $search
+     * @param  \ONGR\ElasticsearchDSL\Search  $search
      * @return \ONGR\ElasticsearchDSL\Search
      */
     private function addAggregations(Search $search): Search
@@ -192,9 +192,9 @@ class Elasticsearch
     /**
      * Sorts given field.
      *
-     * @param string $field
-     * @param string|null $order
-     * @param array $params
+     * @param  string  $field
+     * @param  string|null  $order
+     * @param  array  $params
      * @return \App\Library\Elasticsearch\Elasticsearch
      */
     public function sort(string $field, string $order = null, $params = []): self
@@ -213,7 +213,7 @@ class Elasticsearch
     /**
      * Push sort to sort container.
      *
-     * @param \ONGR\ElasticsearchDSL\Search $search
+     * @param  \ONGR\ElasticsearchDSL\Search  $search
      * @return \ONGR\ElasticsearchDSL\Search
      */
     private function addSort(Search $search): Search
