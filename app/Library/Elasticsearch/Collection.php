@@ -2,12 +2,16 @@
 
 namespace App\Library\Elasticsearch;
 
+use stdClass;
 use Countable;
 use ArrayAccess;
 use Traversable;
 use ArrayIterator;
 use JsonSerializable;
 use IteratorAggregate;
+use Illuminate\Support\Arr;
+use Illuminate\Contracts\Support\Jsonable;
+use Illuminate\Contracts\Support\Arrayable;
 
 class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAggregate
 {
@@ -63,6 +67,31 @@ class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAg
     }
 
     /**
+     * Results array of items from Collection or Arrayable.
+     *
+     * @param  mixed  $items
+     * @return array
+     */
+    protected function getArrayableItems($items): array
+    {
+        if (is_array($items)) {
+            return $items;
+        } elseif ($items instanceof self) {
+            return $items->all();
+        } elseif ($items instanceof Arrayable) {
+            return $items->toArray();
+        } elseif ($items instanceof Jsonable) {
+            return json_decode($items->toJson(), true);
+        } elseif ($items instanceof JsonSerializable) {
+            return $items->jsonSerialize();
+        } elseif ($items instanceof Traversable) {
+            return iterator_to_array($items);
+        }
+
+        return (array) $items;
+    }
+
+    /**
      * Get the values of a given key.
      *
      * @param  string  $column
@@ -81,6 +110,119 @@ class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAg
         }
 
         return new static($this->items);
+    }
+
+    /**
+     * Determine if the given value is callable, but not a string.
+     *
+     * @param  mixed  $value
+     * @return bool
+     */
+    protected function useAsCallable($value): bool
+    {
+        return ! is_string($value) && is_callable($value);
+    }
+
+    /**
+     * Get the first item from the collection passing the given truth test.
+     *
+     * @param  callable|null  $callback
+     * @param  mixed  $default
+     * @return mixed
+     */
+    public function first(callable $callback = null, $default = null)
+    {
+        return Arr::first($this->items, $callback, $default);
+    }
+
+    /**
+     * Get an operator checker callback.
+     *
+     * @param  string  $key
+     * @param  string  $operator
+     * @param  mixed  $value
+     * @return \Closure
+     */
+    protected function operatorForWhere($key, $operator = null, $value = null): callable
+    {
+        if (func_num_args() === 1) {
+            $value = true;
+
+            $operator = '=';
+        }
+
+        if (func_num_args() === 2) {
+            $value = $operator;
+
+            $operator = '=';
+        }
+
+        return static function ($item) use ($key, $operator, $value) {
+            $retrieved = data_get($item, $key);
+
+            $strings = array_filter([$retrieved, $value], static function ($value) {
+                return is_string($value) || (is_object($value) && method_exists($value, '__toString'));
+            });
+
+            if (count($strings) < 2 && count(array_filter([$retrieved, $value], 'is_object')) === 1) {
+                return in_array($operator, ['!=', '<>', '!==']);
+            }
+
+            switch ($operator) {
+                default:
+                case '=':
+                case '==':
+                    return $retrieved === $value;
+                case '!=':
+                case '<>':
+                    return $retrieved !== $value;
+                case '<':
+                    return $retrieved < $value;
+                case '>':
+                    return $retrieved > $value;
+                case '<=':
+                    return $retrieved <= $value;
+                case '>=':
+                    return $retrieved >= $value;
+                case '===':
+                    return $retrieved === $value;
+                case '!==':
+                    return $retrieved !== $value;
+            }
+        };
+    }
+
+    /**
+     * Determine if an item exists in the collection.
+     *
+     * @param  mixed  $key
+     * @param  mixed  $operator
+     * @param  mixed  $value
+     * @return bool
+     */
+    public function contains($key, $operator = null, $value = null): bool
+    {
+        if (func_num_args() === 1) {
+            if ($this->useAsCallable($key)) {
+                $placeholder = new stdClass;
+
+                return $this->first($key, $placeholder) !== $placeholder;
+            }
+
+            return in_array($key, $this->items, true);
+        }
+
+        return $this->contains($this->operatorForWhere(...func_get_args()));
+    }
+
+    /**
+     * Get all of the items in the collection.
+     *
+     * @return array
+     */
+    public function all(): array
+    {
+        return $this->items;
     }
 
     /**
@@ -108,16 +250,23 @@ class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAg
     }
 
     /**
-     * Specify data which should be serialized to JSON
+     * Convert the object into something JSON serializable.
      *
-     * @link https://php.net/manual/en/jsonserializable.jsonserialize.php
-     * @return mixed data which can be serialized by <b>json_encode</b>,
-     * which is a value of any type other than a resource.
-     * @since 5.4.0
+     * @return array
      */
-    public function jsonSerialize()
+    public function jsonSerialize(): array
     {
-        return $this->items;
+        return array_map(static function ($value) {
+            if ($value instanceof JsonSerializable) {
+                return $value->jsonSerialize();
+            } elseif ($value instanceof Jsonable) {
+                return json_decode($value->toJson(), true);
+            } elseif ($value instanceof Arrayable) {
+                return $value->toArray();
+            }
+
+            return $value;
+        }, $this->items);
     }
 
     /**
@@ -182,11 +331,64 @@ class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAg
      */
     public function map(callable $callback): self
     {
-        $this->items = array_map(static function ($item) use ($callback) {
-            return $callback($item);
-        }, $this->items);
+        $keys = array_keys($this->items);
 
-        return new static($this->items);
+        $items = array_map($callback, $this->items, $keys);
+
+        return new static(array_combine($keys, $items));
+    }
+
+    /**
+     * Key an associative array by a field or using a callback.
+     *
+     * @param  callable|string  $keyBy
+     * @return self
+     */
+    public function keyBy($keyBy): self
+    {
+        $keyBy = $this->valueRetriever($keyBy);
+
+        $results = [];
+
+        foreach ($this->items as $key => $item) {
+            $resolvedKey = $keyBy($item, $key);
+
+            if (is_object($resolvedKey)) {
+                $resolvedKey = (string) $resolvedKey;
+            }
+
+            $results[$resolvedKey] = $item;
+        }
+
+        return new static($results);
+    }
+
+    /**
+     * Get a value retrieving callback.
+     *
+     * @param callable|string|null $value
+     * @return callable
+     */
+    protected function valueRetriever($value): callable
+    {
+        if ($this->useAsCallable($value)) {
+            return $value;
+        }
+
+        return static function ($item) use ($value) {
+            return data_get($item, $value);
+        };
+    }
+
+    /**
+     * Get the items in the collection that are not present in the given items.
+     *
+     * @param  mixed  $items
+     * @return self
+     */
+    public function diff($items): self
+    {
+        return new static(array_diff($this->items, $this->getArrayableItems($items)));
     }
 
     /**

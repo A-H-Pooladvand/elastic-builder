@@ -3,9 +3,9 @@
 namespace App\Library\Elasticsearch;
 
 use ONGR\ElasticsearchDSL\Query\MatchAllQuery;
-use ONGR\ElasticsearchDSL\Query\TermLevel\RangeQuery;
 use ONGR\ElasticsearchDSL\Query\TermLevel\TermQuery;
 use ONGR\ElasticsearchDSL\Query\TermLevel\TermsQuery;
+use ONGR\ElasticsearchDSL\Query\TermLevel\RangeQuery;
 
 trait ElasticQueries
 {
@@ -40,7 +40,7 @@ trait ElasticQueries
      * @param  array  $parameters
      * @return \App\Library\Elasticsearch\Elasticsearch
      */
-    public function terms(string $field, array $terms, array $parameters = []): self
+    public function terms(string $field, iterable $terms, array $parameters = []): self
     {
         $query = new TermsQuery($field, $terms, $parameters);
 

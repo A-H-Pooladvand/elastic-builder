@@ -2,6 +2,7 @@
 
 namespace App\Library\Elasticsearch;
 
+use App;
 use Closure;
 use ONGR\ElasticsearchDSL\Aggregation\Bucketing\RangeAggregation;
 use ONGR\ElasticsearchDSL\Aggregation\Bucketing\TermsAggregation;
@@ -10,13 +11,6 @@ use ONGR\ElasticsearchDSL\Aggregation\Bucketing\DateHistogramAggregation;
 trait ElasticAggregations
 {
     private $aggregations = [];
-
-    private $aggregation;
-
-    public function __construct(Aggregation $aggregation)
-    {
-        $this->aggregation = $aggregation;
-    }
 
     /**
      * Terms aggregations.

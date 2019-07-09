@@ -2,10 +2,17 @@
 
 namespace App\Library\Elasticsearch;
 
+use App;
+use App\Library\Elasticsearch\Model\Model;
 use Elasticsearch\ClientBuilder;
 use ONGR\ElasticsearchDSL\Search;
 use ONGR\ElasticsearchDSL\Sort\FieldSort;
 
+/**
+ * Class Elasticsearch
+ *
+ * @package App\Library\Elasticsearch
+ */
 class Elasticsearch
 {
     use  ElasticQueries, ElasticAggregations;
@@ -32,13 +39,33 @@ class Elasticsearch
     private $sort = [];
 
     /**
+     * Abstract model class.
+     *
+     * @var \App\Library\Elasticsearch\Model\Model $model
+     */
+    private $model;
+
+    /**
+     * Aggregation class.
+     *
+     * @var \App\Library\Elasticsearch\Aggregation
+     */
+    private $aggregation;
+
+    public function __construct(Model $model)
+    {
+        $this->model = $model;
+
+        $this->aggregation = App::make(Aggregation::class);
+    }
+
+    /**
      * Get query results.
      *
-     * @param  string  $model
      * @param  bool  $debug
      * @return \App\Library\Elasticsearch\Collection
      */
-    public function get($model, bool $debug = null)
+    public function get(bool $debug = null)
     {
         $search = new Search;
 
@@ -56,7 +83,7 @@ class Elasticsearch
             return $search->toArray();
         }
 
-        $searchResult = $this->search($search, 'divar_post');
+        $searchResult = $this->search($search, $this->model->getIndex());
 
         $this->resetProperties();
 
@@ -147,7 +174,7 @@ class Elasticsearch
      */
     private function search(Search $search, string $index): array
     {
-        $client = ClientBuilder::create()->setHosts([config('elastic.host')])->build();
+        $client = ClientBuilder::create()->setHosts([$this->model->getHost()])->build();
 
         $searchParams = [
             'index' => $index,
