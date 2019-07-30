@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Library\Elasticsearch;
+namespace App\Http\Src\Elasticsearch;
 
 use stdClass;
 use Countable;
@@ -28,70 +28,6 @@ class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAg
     }
 
     /**
-     * Get first level of hits.
-     *
-     * @return self
-     */
-    public function hits(): self
-    {
-        $this->items = $this->items['hits'];
-
-        return new static($this->items);
-    }
-
-    /**
-     * Get second level of hits (_source).
-     *
-     * @return self
-     */
-    public function source(): self
-    {
-        $this->hits();
-
-        $this->items = array_map(static function ($item) {
-            return $item['_source'];
-        }, $this->items['hits']);
-
-        return new static($this->items);
-    }
-
-    /**
-     * Get collection of items as json.
-     *
-     * @param  int  $options
-     * @return string
-     */
-    public function toJson(int $options = JSON_ERROR_NONE): string
-    {
-        return json_encode($this->jsonSerialize(), $options);
-    }
-
-    /**
-     * Results array of items from Collection or Arrayable.
-     *
-     * @param  mixed  $items
-     * @return array
-     */
-    protected function getArrayableItems($items): array
-    {
-        if (is_array($items)) {
-            return $items;
-        } elseif ($items instanceof self) {
-            return $items->all();
-        } elseif ($items instanceof Arrayable) {
-            return $items->toArray();
-        } elseif ($items instanceof Jsonable) {
-            return json_decode($items->toJson(), true);
-        } elseif ($items instanceof JsonSerializable) {
-            return $items->jsonSerialize();
-        } elseif ($items instanceof Traversable) {
-            return iterator_to_array($items);
-        }
-
-        return (array) $items;
-    }
-
-    /**
      * Get the values of a given key.
      *
      * @param  string  $column
@@ -110,6 +46,79 @@ class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAg
         }
 
         return new static($this->items);
+    }
+
+    /**
+     * Get second level of hits (_source).
+     *
+     * @return self
+     */
+    public function source(): self
+    {
+        $this->items = $this->hits();
+
+        $this->items = array_map(static function ($item) {
+            return $item['_source'];
+        }, $this->items['hits']);
+
+        return new static($this->items);
+    }
+
+    /**
+     * Get first level of hits.
+     *
+     * @return array
+     */
+    private function hits(): array
+    {
+        return $this->items['hits'];
+    }
+
+    /**
+     * Plucks given items based on provided column.
+     *
+     * @param  array  $items
+     * @param  string  $column
+     * @return array
+     */
+    private function plucker(array $items, string $column): array
+    {
+        return array_map(static function ($item) use ($column) {
+            if (! is_array($item)) {
+                return $item;
+            }
+
+            $reserved = $item;
+
+            if (array_key_exists($column, $reserved)) {
+                return $item[$column];
+            }
+
+            return array_shift($reserved)[$column];
+        }, $items);
+    }
+
+    /**
+     * Determine if an item exists in the collection.
+     *
+     * @param  mixed  $key
+     * @param  mixed  $operator
+     * @param  mixed  $value
+     * @return bool
+     */
+    public function contains($key, $operator = null, $value = null): bool
+    {
+        if (func_num_args() === 1) {
+            if ($this->useAsCallable($key)) {
+                $placeholder = new stdClass;
+
+                return $this->first($key, $placeholder) !== $placeholder;
+            }
+
+            return in_array($key, $this->items, true);
+        }
+
+        return $this->contains($this->operatorForWhere(...func_get_args()));
     }
 
     /**
@@ -193,83 +202,6 @@ class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAg
     }
 
     /**
-     * Determine if an item exists in the collection.
-     *
-     * @param  mixed  $key
-     * @param  mixed  $operator
-     * @param  mixed  $value
-     * @return bool
-     */
-    public function contains($key, $operator = null, $value = null): bool
-    {
-        if (func_num_args() === 1) {
-            if ($this->useAsCallable($key)) {
-                $placeholder = new stdClass;
-
-                return $this->first($key, $placeholder) !== $placeholder;
-            }
-
-            return in_array($key, $this->items, true);
-        }
-
-        return $this->contains($this->operatorForWhere(...func_get_args()));
-    }
-
-    /**
-     * Get all of the items in the collection.
-     *
-     * @return array
-     */
-    public function all(): array
-    {
-        return $this->items;
-    }
-
-    /**
-     * Plucks given items based on provided column.
-     *
-     * @param  array  $items
-     * @param  string  $column
-     * @return array
-     */
-    private function plucker(array $items, string $column): array
-    {
-        return array_map(static function ($item) use ($column) {
-            if (! is_array($item)) {
-                return $item;
-            }
-
-            $reserved = $item;
-
-            if (array_key_exists($column, $reserved)) {
-                return $item[$column];
-            }
-
-            return array_shift($reserved)[$column];
-        }, $items);
-    }
-
-    /**
-     * Convert the object into something JSON serializable.
-     *
-     * @return array
-     */
-    public function jsonSerialize(): array
-    {
-        return array_map(static function ($value) {
-            if ($value instanceof JsonSerializable) {
-                return $value->jsonSerialize();
-            } elseif ($value instanceof Jsonable) {
-                return json_decode($value->toJson(), true);
-            } elseif ($value instanceof Arrayable) {
-                return $value->toArray();
-            }
-
-            return $value;
-        }, $this->items);
-    }
-
-    /**
      * Count elements of an object
      *
      * @link https://php.net/manual/en/countable.count.php
@@ -295,10 +227,20 @@ class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAg
     }
 
     /**
+     * Determine if the collection is empty or not.
+     *
+     * @return bool
+     */
+    public function isEmpty(): bool
+    {
+        return empty($this->items);
+    }
+
+    /**
      * Get aggregation bucket.
      *
      * @param  mixed  ...$index
-     * @return \App\Library\Elasticsearch\Collection
+     * @return \App\Http\Src\Elasticsearch\Collection
      */
     public function aggregations(...$index): self
     {
@@ -323,6 +265,11 @@ class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAg
         return new static($this->items);
     }
 
+    public function buckets()
+    {
+        return new static($this->aggregations()['hits']['buckets']);
+    }
+
     /**
      * Run a map over each of the items.
      *
@@ -336,6 +283,89 @@ class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAg
         $items = array_map($callback, $this->items, $keys);
 
         return new static(array_combine($keys, $items));
+    }
+
+    /**
+     * Get a flattened array of the items in the collection.
+     *
+     * @param  int  $depth
+     * @return self
+     */
+    public function flatten($depth = INF): self
+    {
+        return new static(Arr::flatten($this->items, $depth));
+    }
+
+    /**
+     * Merge the collection with the given items.
+     *
+     * @param  mixed  $items
+     * @return self
+     */
+    public function merge($items): self
+    {
+        return new static(array_merge($this->items, $this->getArrayableItems($items)));
+    }
+
+    /**
+     * Sort the collection using the given callback.
+     *
+     * @param  callable|string  $callback
+     * @param  int  $options
+     * @param  bool  $descending
+     * @return self
+     */
+    public function sortBy($callback, $options = SORT_REGULAR, $descending = false): self
+    {
+        $results = [];
+
+        $callback = $this->valueRetriever($callback);
+
+        // First we will loop through the items and get the comparator from a callback
+        // function which we were given. Then, we will sort the returned values and
+        // and grab the corresponding values for the sorted keys from this array.
+        foreach ($this->items as $key => $value) {
+            $results[$key] = $callback($value, $key);
+        }
+
+        $descending ? arsort($results, $options)
+            : asort($results, $options);
+
+        // Once we have sorted all of the keys in the array, we will loop through them
+        // and grab the corresponding model so we can set the underlying items list
+        // to the sorted version. Then we'll just return the collection instance.
+        foreach (array_keys($results) as $key) {
+            $results[$key] = $this->items[$key];
+        }
+
+        return new static($results);
+    }
+
+    /**
+     * Run a filter over each of the items.
+     *
+     * @param  callable|null  $callback
+     * @return self
+     */
+    public function filter(callable $callback = null): self
+    {
+        if ($callback) {
+            return new static(Arr::where($this->items, $callback));
+        }
+
+        return new static(array_filter($this->items));
+    }
+
+    /**
+     * Sort the collection in descending order using the given callback.
+     *
+     * @param  callable|string  $callback
+     * @param  int  $options
+     * @return self
+     */
+    public function sortByDesc($callback, $options = SORT_REGULAR): self
+    {
+        return $this->sortBy($callback, $options, true);
     }
 
     /**
@@ -364,9 +394,32 @@ class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAg
     }
 
     /**
+     * Run an associative map over each of the items.
+     *
+     * The callback should return an associative array with a single key/value pair.
+     *
+     * @param  callable  $callback
+     * @return self
+     */
+    public function mapWithKeys(callable $callback): self
+    {
+        $result = [];
+
+        foreach ($this->items as $key => $value) {
+            $assoc = $callback($value, $key);
+
+            foreach ($assoc as $mapKey => $mapValue) {
+                $result[$mapKey] = $mapValue;
+            }
+        }
+
+        return new static($result);
+    }
+
+    /**
      * Get a value retrieving callback.
      *
-     * @param callable|string|null $value
+     * @param  callable|string|null  $value
      * @return callable
      */
     protected function valueRetriever($value): callable
@@ -389,6 +442,41 @@ class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAg
     public function diff($items): self
     {
         return new static(array_diff($this->items, $this->getArrayableItems($items)));
+    }
+
+    /**
+     * Results array of items from Collection or Arrayable.
+     *
+     * @param  mixed  $items
+     * @return array
+     */
+    protected function getArrayableItems($items): array
+    {
+        if (is_array($items)) {
+            return $items;
+        } elseif ($items instanceof self) {
+            return $items->all();
+        } elseif ($items instanceof Arrayable) {
+            return $items->toArray();
+        } elseif ($items instanceof Jsonable) {
+            return json_decode($items->toJson(), true);
+        } elseif ($items instanceof JsonSerializable) {
+            return $items->jsonSerialize();
+        } elseif ($items instanceof Traversable) {
+            return iterator_to_array($items);
+        }
+
+        return (array) $items;
+    }
+
+    /**
+     * Get all of the items in the collection.
+     *
+     * @return array
+     */
+    public function all(): array
+    {
+        return $this->items;
     }
 
     /**
@@ -425,6 +513,17 @@ class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAg
         }
 
         return new static($this->items);
+    }
+
+    /**
+     * Unset the item at a given offset.
+     *
+     * @param  string  $key
+     * @return void
+     */
+    public function offsetUnset($key): void
+    {
+        unset($this->items[$key]);
     }
 
     /**
@@ -465,17 +564,6 @@ class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAg
     }
 
     /**
-     * Unset the item at a given offset.
-     *
-     * @param  string  $key
-     * @return void
-     */
-    public function offsetUnset($key): void
-    {
-        unset($this->items[$key]);
-    }
-
-    /**
      * Convert the collection to its string representation.
      *
      * @return string
@@ -485,10 +573,35 @@ class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAg
         return $this->toJson();
     }
 
-    public function __set($name, $value)
+    /**
+     * Get collection of items as json.
+     *
+     * @param  int  $options
+     * @return string
+     */
+    public function toJson(int $options = JSON_ERROR_NONE): string
     {
-        // Todo implement method.
-        dd('Please implement the magic method.');
+        return json_encode($this->jsonSerialize(), $options);
+    }
+
+    /**
+     * Convert the object into something JSON serializable.
+     *
+     * @return array
+     */
+    public function jsonSerialize(): array
+    {
+        return array_map(static function ($value) {
+            if ($value instanceof JsonSerializable) {
+                return $value->jsonSerialize();
+            } elseif ($value instanceof Jsonable) {
+                return json_decode($value->toJson(), true);
+            } elseif ($value instanceof Arrayable) {
+                return $value->toArray();
+            }
+
+            return $value;
+        }, $this->items);
     }
 
     public function __isset($name)
@@ -504,6 +617,12 @@ class Collection implements JsonSerializable, Countable, ArrayAccess, IteratorAg
         }
 
         return $this->items[$name];
+    }
+
+    public function __set($name, $value)
+    {
+        // Todo implement method.
+        dd('Please implement the magic method.');
     }
 
     /**

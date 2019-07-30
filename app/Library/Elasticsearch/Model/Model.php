@@ -1,20 +1,32 @@
 <?php
 
-namespace App\Library\Elasticsearch\Model;
+namespace App\Http\Src\Elasticsearch\Model;
 
-use App\Library\Elasticsearch\Elasticsearch;
+use App\Http\Src\Elasticsearch\Elasticsearch;
 
 /**
  * Class Model
  *
- * @mixin \App\Library\Elasticsearch\Elasticsearch
- * @package App\Library\Elasticsearch\Model
+ * @mixin \App\Http\Src\Elasticsearch\Elasticsearch
+ * @package App\Http\Src\Elasticsearch\Model
  */
 abstract class Model
 {
     protected $index;
 
     protected $connection;
+
+    /**
+     * Fires when calling static method which doesnt exists.
+     *
+     * @param $method
+     * @param $parameters
+     * @return mixed
+     */
+    public static function __callStatic($method, $parameters)
+    {
+        return (new static)->$method(...$parameters);
+    }
 
     /**
      * Index getter.
@@ -27,13 +39,16 @@ abstract class Model
     }
 
     /**
-     * Connection setter.
+     * Determines host and port of elasticsearch.
      *
-     * @param  string|null  $connection
+     * @return string
      */
-    private function setConnection(string $connection = null): void
+    public function getHost(): string
     {
-        $this->connection = $connection;
+        $host = config("database.connections.{$this->getConnection()}.host");
+        $port = config("database.connections.{$this->getConnection()}.port");
+
+        return $host.':'.$port;
     }
 
     /**
@@ -53,16 +68,13 @@ abstract class Model
     }
 
     /**
-     * Determines host and port of elasticsearch.
+     * Connection setter.
      *
-     * @return string
+     * @param  string|null  $connection
      */
-    public function getHost(): string
+    private function setConnection(string $connection = null): void
     {
-        $host = config("database.connections.{$this->getConnection()}.host");
-        $port = config("database.connections.{$this->getConnection()}.port");
-
-        return $host.':'.$port;
+        $this->connection = $connection;
     }
 
     /**
@@ -75,17 +87,5 @@ abstract class Model
     public function __call($method, $parameters)
     {
         return (new Elasticsearch(new static))->$method(...$parameters);
-    }
-
-    /**
-     * Fires when calling static method which doesnt exists.
-     *
-     * @param $method
-     * @param $parameters
-     * @return mixed
-     */
-    public static function __callStatic($method, $parameters)
-    {
-        return (new static)->$method(...$parameters);
     }
 }

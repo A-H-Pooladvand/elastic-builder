@@ -1,17 +1,18 @@
 <?php
 
-namespace App\Library\Elasticsearch;
+namespace App\Http\Src\Elasticsearch;
 
 use App;
-use App\Library\Elasticsearch\Model\Model;
 use Elasticsearch\ClientBuilder;
 use ONGR\ElasticsearchDSL\Search;
 use ONGR\ElasticsearchDSL\Sort\FieldSort;
+use App\Http\Src\Elasticsearch\Model\Model;
+use ONGR\ElasticsearchDSL\Query\Compound\BoolQuery;
 
 /**
  * Class Elasticsearch
  *
- * @package App\Library\Elasticsearch
+ * @package App\Http\Src\Elasticsearch
  */
 class Elasticsearch
 {
@@ -41,14 +42,21 @@ class Elasticsearch
     /**
      * Abstract model class.
      *
-     * @var \App\Library\Elasticsearch\Model\Model $model
+     * @var \App\Http\Src\Elasticsearch\Model\Model $model
      */
     private $model;
 
     /**
+     * The offset of query.
+     *
+     * @var int $from
+     */
+    private $from = 0;
+
+    /**
      * Aggregation class.
      *
-     * @var \App\Library\Elasticsearch\Aggregation
+     * @var \App\Http\Src\Elasticsearch\Aggregation
      */
     private $aggregation;
 
@@ -57,18 +65,21 @@ class Elasticsearch
         $this->model = $model;
 
         $this->aggregation = App::make(Aggregation::class);
+
+        $this->booleans = new BoolQuery;
     }
 
     /**
      * Get query results.
      *
      * @param  bool  $debug
-     * @return \App\Library\Elasticsearch\Collection
+     * @return \App\Http\Src\Elasticsearch\Collection
      */
     public function get(bool $debug = null)
     {
         $search = new Search;
 
+        $search = $this->addBooleans($search);
         $search = $this->addQueries($search);
         $search = $this->addAggregations($search);
         $search = $this->addSort($search);
@@ -78,6 +89,7 @@ class Elasticsearch
         }
 
         $search->setSize($this->getSize());
+        $search->setFrom($this->from);
 
         if ($debug) {
             return $search->toArray();
@@ -91,66 +103,6 @@ class Elasticsearch
     }
 
     /**
-     * Selects required fields.
-     *
-     * @param  string|array  $fields
-     * @return \App\Library\Elasticsearch\Elasticsearch
-     */
-    public function source($fields): self
-    {
-        $this->source = is_array($fields)
-            ? $fields
-            : func_get_args();
-
-        return $this;
-    }
-
-    /**
-     * Get selecting fields.
-     *
-     * @return array
-     */
-    private function getSource(): ?array
-    {
-        return $this->source;
-    }
-
-    /**
-     * Sets size of query results.
-     *
-     * @param  int  $size
-     * @return self
-     */
-    public function size(int $size): self
-    {
-        $this->size = $size;
-
-        return $this;
-    }
-
-    /**
-     * Sets size of query to zero.
-     *
-     * @return self
-     */
-    public function sizeLess(): self
-    {
-        $this->size(0);
-
-        return $this;
-    }
-
-    /**
-     * Gets size of query results.
-     *
-     * @return mixed
-     */
-    private function getSize()
-    {
-        return $this->size;
-    }
-
-    /**
      * Add queries property container to search query.
      *
      * @param  \ONGR\ElasticsearchDSL\Search  $search
@@ -158,30 +110,15 @@ class Elasticsearch
      */
     private function addQueries(Search $search): Search
     {
+        if (empty($this->queries)) {
+            return $search;
+        }
+
         foreach ($this->queries as $query) {
             $search->addQuery($query);
         }
 
         return $search;
-    }
-
-    /**
-     * Search query in the given index.
-     *
-     * @param  \ONGR\ElasticsearchDSL\Search  $search
-     * @param  string  $index
-     * @return array
-     */
-    private function search(Search $search, string $index): array
-    {
-        $client = ClientBuilder::create()->setHosts([$this->model->getHost()])->build();
-
-        $searchParams = [
-            'index' => $index,
-            'body' => $search->toArray(),
-        ];
-
-        return $client->search($searchParams);
     }
 
     /**
@@ -204,6 +141,62 @@ class Elasticsearch
     }
 
     /**
+     * Push sort to sort container.
+     *
+     * @param  \ONGR\ElasticsearchDSL\Search  $search
+     * @return \ONGR\ElasticsearchDSL\Search
+     */
+    private function addSort(Search $search): Search
+    {
+        foreach ($this->sort as $sort) {
+            $search->addSort(
+                new FieldSort($sort['field'], $sort['order'], $sort['params'])
+            );
+        }
+
+        return $search;
+    }
+
+    /**
+     * Get selecting fields.
+     *
+     * @return array
+     */
+    private function getSource(): ?array
+    {
+        return $this->source;
+    }
+
+    /**
+     * Gets size of query results.
+     *
+     * @return mixed
+     */
+    private function getSize()
+    {
+        return $this->size;
+    }
+
+    /**
+     * Search query in the given index.
+     *
+     * @param  \ONGR\ElasticsearchDSL\Search  $search
+     * @param  string  $index
+     * @return array
+     */
+    private function search(Search $search, string $index): array
+    {
+        $client = ClientBuilder::create()->setHosts([$this->model->getHost()])->build();
+
+        $searchParams = [
+            'index' => $index,
+            'body' => $search->toArray(),
+        ];
+
+        return $client->search($searchParams);
+    }
+
+    /**
      * Set null to all properties.
      *
      * @return void
@@ -217,12 +210,52 @@ class Elasticsearch
     }
 
     /**
+     * Selects required fields.
+     *
+     * @param  string|array  $fields
+     * @return \App\Http\Src\Elasticsearch\Elasticsearch
+     */
+    public function source($fields): self
+    {
+        $this->source = is_array($fields)
+            ? $fields
+            : func_get_args();
+
+        return $this;
+    }
+
+    /**
+     * Sets size of query to zero.
+     *
+     * @return self
+     */
+    public function sizeLess(): self
+    {
+        $this->size(0);
+
+        return $this;
+    }
+
+    /**
+     * Sets size of query results.
+     *
+     * @param  int  $size
+     * @return self
+     */
+    public function size(int $size = null): self
+    {
+        $this->size = $size ?? 15;
+
+        return $this;
+    }
+
+    /**
      * Sorts given field.
      *
      * @param  string  $field
      * @param  string|null  $order
      * @param  array  $params
-     * @return \App\Library\Elasticsearch\Elasticsearch
+     * @return \App\Http\Src\Elasticsearch\Elasticsearch
      */
     public function sort(string $field, string $order = null, $params = []): self
     {
@@ -238,19 +271,33 @@ class Elasticsearch
     }
 
     /**
-     * Push sort to sort container.
+     * Determines offset of query.
+     *
+     * @param  int  $from
+     */
+    public function from(int $from): void
+    {
+        $this->from = $from;
+    }
+
+    /**
+     * Indicates offset of query.
+     *
+     * @return int
+     */
+    public function getFrom(): int
+    {
+        return $this->from;
+    }
+
+    /**
+     * Add booleans query to search query.
      *
      * @param  \ONGR\ElasticsearchDSL\Search  $search
      * @return \ONGR\ElasticsearchDSL\Search
      */
-    private function addSort(Search $search): Search
+    private function addBooleans(Search $search): Search
     {
-        foreach ($this->sort as $sort) {
-            $search->addSort(
-                new FieldSort($sort['field'], $sort['order'], $sort['params'])
-            );
-        }
-
-        return $search;
+        return $search->addQuery($this->booleans);
     }
 }
